@@ -255,4 +255,11 @@ require_type_annotated_api_methods = True
 
 after_migrate = ["do_task.do_task.api.create_do_task_workspace"]
 
-
+fixtures = [
+	{
+		"dt": "Workspace",
+		"filters": [
+			["module", "=", "Do Task"]
+		]
+	}
+]

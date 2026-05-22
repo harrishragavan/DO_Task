@@ -301,7 +301,7 @@ class ProjectOwnerDashboard {
 			e.stopPropagation();
 			const id = $(e.currentTarget).data("id");
 			if (id) {
-				frappe.set_route("List", "Timesheet", {"task": id});
+				this.show_task_activity_dialog(id);
 			}
 		});
 	}
@@ -550,6 +550,126 @@ class ProjectOwnerDashboard {
 						}
 						d.hide(); this.load_tasks(true);
 						frappe.show_alert({ message: "Task Created", indicator: "green" });
+					}
+				});
+			}
+		});
+		d.show();
+	}
+
+	show_task_activity_dialog(task_id) {
+		const d = new frappe.ui.Dialog({
+			title: __("Task Activity for {0}", [task_id]),
+			size: "large",
+			fields: [
+				{
+					fieldname: "activity_html",
+					fieldtype: "HTML"
+				}
+			],
+			primary_action_label: __("Add Activity"),
+			primary_action: () => {
+				this.open_add_activity_dialog(task_id, d);
+			}
+		});
+
+		d.show();
+		this.render_task_activities(task_id, d);
+	}
+
+	render_task_activities(task_id, dialog) {
+		dialog.fields_dict.activity_html.$wrapper.html('<div class="text-muted">Loading activities...</div>');
+		frappe.call({
+			method: "frappe.client.get",
+			args: {
+				doctype: "Task",
+				name: task_id
+			},
+			callback: (r) => {
+				if (!r.message || !r.message.custom_activity || r.message.custom_activity.length === 0) {
+					dialog.fields_dict.activity_html.$wrapper.html('<div class="text-muted text-center" style="padding: 20px;">No activities found.</div>');
+					return;
+				}
+				
+				let activities = r.message.custom_activity;
+				// Sort by date descending
+				activities.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+				let html = `
+					<table class="table table-bordered table-hover" style="margin-bottom: 0;">
+						<thead style="background-color: #f8f9fa;">
+							<tr>
+								<th style="width: 50px; text-align: center;">No.</th>
+								<th style="width: 120px;">Date</th>
+								<th>Work Done</th>
+								<th style="width: 150px;">Done By</th>
+							</tr>
+						</thead>
+						<tbody>
+				`;
+				
+				activities.forEach((act, idx) => {
+					let date_str = act.date ? frappe.datetime.str_to_user(act.date) : "";
+					html += `
+						<tr>
+							<td style="text-align: center; vertical-align: middle;">${idx + 1}</td>
+							<td style="vertical-align: middle;">${date_str}</td>
+							<td style="vertical-align: middle; white-space: pre-wrap;">${act.work_done || ''}</td>
+							<td style="vertical-align: middle;">${act.done_by || ''}</td>
+						</tr>
+					`;
+				});
+				html += `
+						</tbody>
+					</table>
+				`;
+				dialog.fields_dict.activity_html.$wrapper.html(html);
+			}
+		});
+	}
+
+	open_add_activity_dialog(task_id, parent_dialog) {
+		const d = new frappe.ui.Dialog({
+			title: __("Add Task Activity"),
+			fields: [
+				{ label: "Date", fieldname: "date", fieldtype: "Date", reqd: 1, default: frappe.datetime.get_today() },
+				{ label: "Done By", fieldname: "done_by", fieldtype: "Link", options: "User", reqd: 1, default: frappe.session.user },
+				{ label: "Work Done", fieldname: "work_done", fieldtype: "Data", reqd: 1 }
+			],
+			primary_action_label: __("Save"),
+			primary_action: (v) => {
+				d.get_primary_btn().prop('disabled', true);
+				frappe.call({
+					method: "frappe.client.get",
+					args: {
+						doctype: "Task",
+						name: task_id
+					},
+					callback: (r) => {
+						if (r.message) {
+							let task = r.message;
+							if (!task.custom_activity) task.custom_activity = [];
+							task.custom_activity.push({
+								doctype: "Task Activity",
+								date: v.date,
+								work_done: v.work_done,
+								done_by: v.done_by
+							});
+							frappe.call({
+								method: "frappe.client.save",
+								args: { doc: task },
+								callback: (save_res) => {
+									d.get_primary_btn().prop('disabled', false);
+									if (!save_res.exc) {
+										frappe.show_alert({ message: __("Activity added successfully"), indicator: "green" });
+										d.hide();
+										this.render_task_activities(task_id, parent_dialog);
+									}
+								}
+							});
+						} else {
+							d.get_primary_btn().prop('disabled', false);
+						}
 					}
 				});
 			}

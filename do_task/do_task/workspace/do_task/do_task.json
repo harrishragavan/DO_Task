@@ -2,42 +2,18 @@
  "app": "do_task",
  "charts": [],
  "content": "[]",
- "creation": "2026-05-20 17:50:38.268534",
+ "creation": "2026-05-22 13:08:15.814257",
  "custom_blocks": [],
  "docstatus": 0,
  "doctype": "Workspace",
  "hide_custom": 0,
- "icon": "check-square",
  "idx": 0,
  "indicator_color": "green",
  "is_hidden": 0,
  "label": "Do Task",
  "link_type": "DocType",
- "links": [
-  {
-   "hidden": 0,
-   "icon": "fa fa-list",
-   "is_query_report": 0,
-   "label": "Task Dashboard",
-   "link_count": 0,
-   "link_to": "task_dashboard",
-   "link_type": "Page",
-   "onboard": 0,
-   "type": "Link"
-  },
-  {
-   "hidden": 0,
-   "icon": "fa fa-user",
-   "is_query_report": 0,
-   "label": "Project Owner Dashboard",
-   "link_count": 0,
-   "link_to": "project_owner_dashboard",
-   "link_type": "Page",
-   "onboard": 0,
-   "type": "Link"
-  }
- ],
- "modified": "2026-05-20 18:03:32.992701",
+ "links": [],
+ "modified": "2026-05-22 13:29:13.404750",
  "modified_by": "Administrator",
  "module": "Do Task",
  "name": "Do Task",
@@ -45,11 +21,7 @@
  "owner": "Administrator",
  "public": 1,
  "quick_lists": [],
- "roles": [
-  {
-   "role": "All"
-  }
- ],
+ "roles": [],
  "sequence_id": 0.0,
  "shortcuts": [],
  "title": "Do Task",

@@ -1,0 +1,52 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-05-22 11:54:30.454781",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "date",
+  "work_done",
+  "done_by"
+ ],
+ "fields": [
+  {
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "work_done",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Work Done",
+   "reqd": 1
+  },
+  {
+   "fieldname": "done_by",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Done By",
+   "options": "User",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-05-22 12:15:52.626109",
+ "modified_by": "Administrator",
+ "module": "Do Task",
+ "name": "Task Activity",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
