@@ -9,6 +9,12 @@ frappe.pages["project_owner_dashboard"].on_page_load = function (wrapper) {
 	wrapper._project_owner_dashboard = new ProjectOwnerDashboard(wrapper);
 };
 
+frappe.pages["project_owner_dashboard"].on_page_show = function (wrapper) {
+	if (wrapper._project_owner_dashboard) {
+		wrapper._project_owner_dashboard.load_content();
+	}
+};
+
 class ProjectOwnerDashboard {
 	constructor(wrapper) {
 		this.wrapper = $(wrapper);
@@ -84,6 +90,8 @@ class ProjectOwnerDashboard {
 		menu.find(".td-dropdown-item").removeClass("active");
 		if (this.view_type === "list") {
 			menu.find("#td-btn-list-view").addClass("active");
+		} else if (this.view_type === "calendar") {
+			menu.find("#td-btn-calendar-view").addClass("active");
 		} else {
 			menu.find("#td-btn-card-view").addClass("active");
 		}
@@ -125,6 +133,9 @@ class ProjectOwnerDashboard {
 									</button>
 									<button class="td-dropdown-item" id="td-btn-card-view">
 										<i class="fa fa-th"></i> ${__("Card View")}
+									</button>
+									<button class="td-dropdown-item" id="td-btn-calendar-view">
+										<i class="fa fa-calendar"></i> ${__("Calendar View")}
 									</button>
 								</div>
 							</div>
@@ -180,12 +191,12 @@ class ProjectOwnerDashboard {
 		});
 
 		// Menu Dropdown Toggle
-		main.on("click", "#td-btn-menu-trigger", (e) => {
+		main.off("click", "#td-btn-menu-trigger").on("click", "#td-btn-menu-trigger", (e) => {
 			e.stopPropagation();
 			main.find("#td-dropdown-menu-content").toggleClass("active");
 		});
 
-		$(document).on("click.td-menu-close", () => {
+		$(document).off("click.td-menu-close").on("click.td-menu-close", () => {
 			main.find("#td-dropdown-menu-content").removeClass("active");
 		});
 
@@ -203,6 +214,16 @@ class ProjectOwnerDashboard {
 			localStorage.setItem("po_dashboard_view_type", "card");
 			this.update_view_active_class();
 			if (this.current_view === "tasks") {
+				this.load_tasks(true);
+			}
+		});
+
+		main.on("click", "#td-btn-calendar-view", () => {
+			this.view_type = "calendar";
+			localStorage.setItem("po_dashboard_view_type", "calendar");
+			this.update_view_active_class();
+			if (this.current_view === "tasks") {
+				this.page_start = 0;
 				this.load_tasks(true);
 			}
 		});
@@ -292,7 +313,8 @@ class ProjectOwnerDashboard {
 			this.load_tasks(true);
 		});
 		
-		container.on("click", ".td-task-card", (e) => {
+		container.on("click", ".td-task-card, .td-task-list-row", (e) => {
+			if ($(e.target).closest('.td-btn-timesheet').length || $(e.target).closest('.td-status-badge-clickable').length) return;
 			const id = $(e.currentTarget).data("id");
 			if (id) frappe.set_route("Form", "Task", id);
 		});
@@ -303,6 +325,13 @@ class ProjectOwnerDashboard {
 			if (id) {
 				this.show_task_activity_dialog(id);
 			}
+		});
+
+		container.on("click", ".td-status-badge-clickable", (e) => {
+			e.stopPropagation();
+			const task_id = $(e.currentTarget).data("id");
+			const current_status = $(e.currentTarget).data("status");
+			this.open_status_change_dialog(task_id, current_status);
 		});
 	}
 
@@ -320,12 +349,15 @@ class ProjectOwnerDashboard {
 		if (this.search_query) filters.push(["subject", "like", `%${this.search_query}%`]);
 
 		try {
+			const list_limit = this.view_type === 'calendar' ? 1000 : this.page_length;
+			const list_start = this.view_type === 'calendar' ? 0 : this.page_start;
+
 			const [tasks, total] = await Promise.all([
 				frappe.db.get_list("Task", {
 					fields: ["name", "subject", "project", "status", "priority", "exp_end_date", "_assign"],
 					filters: filters,
-					limit_start: this.page_start,
-					limit_page_length: this.page_length,
+					limit_start: list_start,
+					limit_page_length: list_limit,
 					order_by: "modified desc"
 				}),
 				frappe.db.count("Task", { filters: filters })
@@ -374,6 +406,11 @@ class ProjectOwnerDashboard {
 	}
 
 	render_task_cards(container, tasks) {
+		if (this.view_type === "calendar") {
+			this.render_calendar_view(container, tasks);
+			return;
+		}
+
 		if (this.view_type === "list") {
 			container.removeClass("td-task-grid").addClass("td-task-list");
 		} else {
@@ -403,11 +440,11 @@ class ProjectOwnerDashboard {
 				return `
 					<div class="td-task-list-row" data-id="${t.name}">
 						<div class="td-list-col td-list-project-subject">
-							<span class="td-task-project">${t.project || "General"}</span>
-							<h3 class="td-task-subject">${t.subject}</h3>
+							<span class="td-task-project">${frappe.utils.escape_html(t.project || "General")}</span>
+							<h3 class="td-task-subject">${frappe.utils.escape_html(t.subject)}</h3>
 						</div>
 						<div class="td-list-col td-list-badges">
-							<span class="td-badge td-badge-status-${(t.status||"Open").replace(/\s+/g,'')}">${t.status||"Open"}</span>
+							<span class="td-badge td-badge-status-${(t.status||"Open").replace(/\s+/g,'')} td-status-badge-clickable" data-id="${t.name}" data-status="${t.status||'Open'}" title="Click to change status" style="cursor: pointer;">${t.status||"Open"} <i class="fa fa-pencil" style="margin-left: 4px; font-size: 10px;"></i></span>
 							<span class="td-badge td-badge-priority-${t.priority||"Medium"}">${t.priority||"Medium"}</span>
 						</div>
 						<div class="td-list-col td-list-assignees">
@@ -428,11 +465,11 @@ class ProjectOwnerDashboard {
 			return `
 				<div class="td-task-card" data-id="${t.name}">
 					<div class="td-card-header">
-						<div class="td-task-project">${t.project || "General"}</div>
-						<h3 class="td-task-subject">${t.subject}</h3>
+						<div class="td-task-project">${frappe.utils.escape_html(t.project || "General")}</div>
+						<h3 class="td-task-subject">${frappe.utils.escape_html(t.subject)}</h3>
 					</div>
 					<div class="td-card-badges">
-						<span class="td-badge td-badge-status-${(t.status||"Open").replace(/\s+/g,'')}">${t.status||"Open"}</span>
+						<span class="td-badge td-badge-status-${(t.status||"Open").replace(/\s+/g,'')} td-status-badge-clickable" data-id="${t.name}" data-status="${t.status||'Open'}" title="Click to change status" style="cursor: pointer;">${t.status||"Open"} <i class="fa fa-pencil" style="margin-left: 4px; font-size: 10px;"></i></span>
 						<span class="td-badge td-badge-priority-${t.priority||"Medium"}">${t.priority||"Medium"}</span>
 					</div>
 					<div style="margin-top: 8px;">
@@ -554,6 +591,105 @@ class ProjectOwnerDashboard {
 				});
 			}
 		});
+		d.onhide = () => d.$wrapper.remove();
+		d.show();
+	}
+
+	render_calendar_view(container, tasks) {
+		container.removeClass("td-task-list td-task-grid").addClass("td-task-calendar");
+		let date = new Date();
+		let month = date.getMonth();
+		let year = date.getFullYear();
+		let firstDay = new Date(year, month, 1).getDay();
+		let daysInMonth = new Date(year, month + 1, 0).getDate();
+
+		let html = `<div class="td-calendar-wrapper" style="background: white; border: 1px solid var(--td-border); border-radius: 8px; padding: 15px; margin-top: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+			<div style="display: flex; justify-content: space-between; margin-bottom: 15px; align-items: center;">
+				<h3 style="margin: 0; font-size: 18px; color: var(--td-text-main);"><i class="fa fa-calendar" style="color: var(--td-primary); margin-right: 8px;"></i>${date.toLocaleString('default', { month: 'long' })} ${year}</h3>
+			</div>
+			<table class="table table-bordered td-calendar-table" style="width: 100%; table-layout: fixed; border-collapse: collapse;">
+				<thead><tr>
+					<th style="text-align: center; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb;">Sun</th>
+					<th style="text-align: center; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb;">Mon</th>
+					<th style="text-align: center; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb;">Tue</th>
+					<th style="text-align: center; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb;">Wed</th>
+					<th style="text-align: center; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb;">Thu</th>
+					<th style="text-align: center; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb;">Fri</th>
+					<th style="text-align: center; padding: 10px; background: #f9fafb; border: 1px solid #e5e7eb;">Sat</th>
+				</tr></thead>
+				<tbody><tr>`;
+
+		let d = 1;
+		for (let i = 0; i < 42; i++) {
+			if (i % 7 === 0 && i > 0) html += `</tr><tr>`;
+			if (i < firstDay || d > daysInMonth) {
+				html += `<td style="height: 100px; background: #f9fafb; border: 1px solid #e5e7eb;"></td>`;
+			} else {
+				let currentDay = d;
+				let day_tasks = tasks.filter(t => {
+					if (!t.exp_end_date) return false;
+					let td = new Date(t.exp_end_date);
+					return td.getDate() === currentDay && td.getMonth() === month && td.getFullYear() === year;
+				});
+				let tasks_html = day_tasks.map(t => `<div class="td-task-card td-cal-event" data-id="${t.name}" style="background: var(--td-primary-light, #e0e7ff); color: var(--td-primary, #4f46e5); padding: 4px 6px; border-radius: 4px; font-size: 11px; margin-bottom: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid rgba(79, 70, 229, 0.2); box-shadow: none;" title="${t.subject}">${t.subject}</div>`).join("");
+				html += `<td style="height: 100px; vertical-align: top; position: relative; border: 1px solid #e5e7eb; padding: 5px;">
+					<div style="font-weight: bold; margin-bottom: 5px; font-size: 12px; color: var(--td-text-muted); text-align: right;">${d}</div>
+					${tasks_html}
+				</td>`;
+				d++;
+			}
+		}
+		html += `</tr></tbody></table></div>`;
+		container.html(html);
+	}
+
+	open_status_change_dialog(task_id, current_status) {
+		const d = new frappe.ui.Dialog({
+			title: __("Change Status & Add Timesheet"),
+			fields: [
+				{ label: "New Status", fieldname: "status", fieldtype: "Select", options: this.status_options, default: current_status, reqd: 1 },
+				{ fieldtype: "Section Break", label: "Timesheet Details (Mandatory)" },
+				{ label: "Date", fieldname: "date", fieldtype: "Date", reqd: 1, default: frappe.datetime.get_today() },
+				{ label: "Done By", fieldname: "done_by", fieldtype: "Link", options: "User", reqd: 1, default: frappe.session.user },
+				{ label: "Work Done", fieldname: "work_done", fieldtype: "Text", reqd: 1 }
+			],
+			primary_action_label: __("Update & Save"),
+			primary_action: (v) => {
+				d.get_primary_btn().prop('disabled', true);
+				frappe.call({
+					method: "frappe.client.get",
+					args: { doctype: "Task", name: task_id },
+					callback: (r) => {
+						if (r.message) {
+							let task = r.message;
+							task.status = v.status;
+							if (!task.custom_activity) task.custom_activity = [];
+							task.custom_activity.push({
+								doctype: "Task Activity",
+								date: v.date,
+								work_done: v.work_done,
+								done_by: v.done_by
+							});
+							frappe.call({
+								method: "frappe.client.save",
+								args: { doc: task },
+								callback: (save_res) => {
+									d.get_primary_btn().prop('disabled', false);
+									if (!save_res.exc) {
+										frappe.show_alert({ message: __("Task Updated"), indicator: "green" });
+										d.hide();
+										this.load_tasks(false);
+									}
+								}
+							});
+						} else {
+							d.get_primary_btn().prop('disabled', false);
+						}
+					}
+				});
+			}
+		});
+		d.onhide = () => d.$wrapper.remove();
 		d.show();
 	}
 
@@ -573,6 +709,7 @@ class ProjectOwnerDashboard {
 			}
 		});
 
+		d.onhide = () => d.$wrapper.remove();
 		d.show();
 		this.render_task_activities(task_id, d);
 	}
@@ -614,8 +751,8 @@ class ProjectOwnerDashboard {
 						<tr>
 							<td style="text-align: center; vertical-align: middle;">${idx + 1}</td>
 							<td style="vertical-align: middle;">${date_str}</td>
-							<td style="vertical-align: middle; white-space: pre-wrap;">${act.work_done || ''}</td>
-							<td style="vertical-align: middle;">${act.done_by || ''}</td>
+							<td style="vertical-align: middle; white-space: pre-wrap;">${frappe.utils.escape_html(act.work_done || '')}</td>
+							<td style="vertical-align: middle;">${frappe.utils.escape_html(act.done_by || '')}</td>
 						</tr>
 					`;
 				});
@@ -674,6 +811,7 @@ class ProjectOwnerDashboard {
 				});
 			}
 		});
+		d.onhide = () => d.$wrapper.remove();
 		d.show();
 	}
 }

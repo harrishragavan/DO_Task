@@ -12,7 +12,8 @@
  "indicator_color": "green",
  "is_hidden": 0,
  "label": "Do Task",
- "link_type": "DocType",
+ "link_type": "Page",
+ "link_to": "task_dashboard",
  "links": [],
  "modified": "2026-05-22 13:29:13.404750",
  "modified_by": "Administrator",
@@ -26,5 +27,5 @@
  "sequence_id": 0.0,
  "shortcuts": [],
  "title": "Do Task",
- "type": "Workspace"
+ "type": "Link"
 }
