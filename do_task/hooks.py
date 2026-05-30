@@ -86,7 +86,7 @@ app_license = "mit"
 # ------------
 
 # before_install = "do_task.install.before_install"
-# after_install = "do_task.install.after_install"
+after_install = "do_task.setup.after_install"
 
 # Uninstallation
 # ------------
@@ -253,7 +253,7 @@ export_python_type_annotations = True
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
 
-after_migrate = ["do_task.do_task.api.create_do_task_workspace"]
+after_migrate = ["do_task.do_task.api.create_do_task_workspace", "do_task.setup.after_migrate"]
 
 fixtures = [
 	{

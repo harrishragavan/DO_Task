@@ -376,19 +376,19 @@ class TaskDashboard {
 		});
 		if (this.filters.assigned_to) this.user_filter.set_value(this.filters.assigned_to);
 
-		container.on("change", ".td-f-sel", (e) => {
+		container.off("change", ".td-f-sel").on("change", ".td-f-sel", (e) => {
 			this.filters[$(e.currentTarget).data("filter")] = $(e.currentTarget).val();
 			this.page_start = 0;
 			this.load_tasks(true);
 		});
 
-		container.on("click", ".td-task-card, .td-task-list-row", (e) => {
+		container.off("click", ".td-task-card, .td-task-list-row").on("click", ".td-task-card, .td-task-list-row", (e) => {
 			if ($(e.target).closest('.td-btn-timesheet').length || $(e.target).closest('.td-status-badge-clickable').length) return;
 			const id = $(e.currentTarget).data("id");
 			if (id) frappe.set_route("Form", "Task", id);
 		});
 
-		container.on("click", ".td-btn-timesheet", (e) => {
+		container.off("click", ".td-btn-timesheet").on("click", ".td-btn-timesheet", (e) => {
 			e.stopPropagation();
 			const id = $(e.currentTarget).data("id");
 			if (id) {
@@ -396,7 +396,7 @@ class TaskDashboard {
 			}
 		});
 
-		container.on("click", ".td-status-badge-clickable", (e) => {
+		container.off("click", ".td-status-badge-clickable").on("click", ".td-status-badge-clickable", (e) => {
 			e.stopPropagation();
 			const task_id = $(e.currentTarget).data("id");
 			const current_status = $(e.currentTarget).data("status");
@@ -534,7 +534,7 @@ class TaskDashboard {
 						</div>
 						<div class="td-list-col td-list-timesheet" style="flex: 1.2; justify-content: center;">
 							<button class="td-btn-timesheet" data-id="${t.name}">
-								<i class="fa fa-clock-o"></i> View Timesheet
+								<i class="fa fa-clock-o"></i> View Activity
 							</button>
 						</div>
 					</div>
@@ -553,7 +553,7 @@ class TaskDashboard {
 					</div>
 					<div style="margin-top: 8px;">
 						<button class="td-btn-timesheet" style="width: 100%;" data-id="${t.name}">
-							<i class="fa fa-clock-o"></i> View Timesheet
+							<i class="fa fa-clock-o"></i> View Activity
 						</button>
 					</div>
 					<div class="td-card-footer">
@@ -717,7 +717,11 @@ class TaskDashboard {
 				});
 			}
 		});
-		d.onhide = () => d.$wrapper.remove();
+		d.onhide = () => {
+			setTimeout(() => {
+				if (d && d.$wrapper) d.$wrapper.remove();
+			}, 300);
+		};
 		d.show();
 	}
 
@@ -737,7 +741,11 @@ class TaskDashboard {
 			}
 		});
 
-		d.onhide = () => d.$wrapper.remove();
+		d.onhide = () => {
+			setTimeout(() => {
+				if (d && d.$wrapper) d.$wrapper.remove();
+			}, 300);
+		};
 		d.show();
 		this.render_task_activities(task_id, d);
 	}
@@ -751,12 +759,12 @@ class TaskDashboard {
 				name: task_id
 			},
 			callback: (r) => {
-				if (!r.message || !r.message.custom_activity || r.message.custom_activity.length === 0) {
+				if (!r.message || !r.message.task_activity || r.message.task_activity.length === 0) {
 					dialog.fields_dict.activity_html.$wrapper.html('<div class="text-muted text-center" style="padding: 20px;">No activities found.</div>');
 					return;
 				}
 				
-				let activities = r.message.custom_activity;
+				let activities = r.message.task_activity;
 				// Sort by date descending
 				activities.sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -813,8 +821,8 @@ class TaskDashboard {
 					callback: (r) => {
 						if (r.message) {
 							let task = r.message;
-							if (!task.custom_activity) task.custom_activity = [];
-							task.custom_activity.push({
+							if (!task.task_activity) task.task_activity = [];
+							task.task_activity.push({
 								doctype: "Task Activity",
 								date: v.date,
 								work_done: v.work_done,
@@ -839,7 +847,11 @@ class TaskDashboard {
 				});
 			}
 		});
-		d.onhide = () => d.$wrapper.remove();
+		d.onhide = () => {
+			setTimeout(() => {
+				if (d && d.$wrapper) d.$wrapper.remove();
+			}, 300);
+		};
 		d.show();
 	}
 
@@ -867,6 +879,18 @@ class TaskDashboard {
 				</tr></thead>
 				<tbody><tr>`;
 
+		let tasksByDate = {};
+		tasks.forEach(t => {
+			if (t.exp_end_date) {
+				let d_obj = new Date(t.exp_end_date);
+				if (d_obj.getMonth() === month && d_obj.getFullYear() === year) {
+					let day = d_obj.getDate();
+					if (!tasksByDate[day]) tasksByDate[day] = [];
+					tasksByDate[day].push(t);
+				}
+			}
+		});
+
 		let d = 1;
 		for (let i = 0; i < 42; i++) {
 			if (i % 7 === 0 && i > 0) html += `</tr><tr>`;
@@ -874,11 +898,7 @@ class TaskDashboard {
 				html += `<td style="height: 100px; background: #f9fafb; border: 1px solid #e5e7eb;"></td>`;
 			} else {
 				let currentDay = d;
-				let day_tasks = tasks.filter(t => {
-					if (!t.exp_end_date) return false;
-					let td = new Date(t.exp_end_date);
-					return td.getDate() === currentDay && td.getMonth() === month && td.getFullYear() === year;
-				});
+				let day_tasks = tasksByDate[currentDay] || [];
 				let tasks_html = day_tasks.map(t => `<div class="td-task-card td-cal-event" data-id="${t.name}" style="background: var(--td-primary-light, #e0e7ff); color: var(--td-primary, #4f46e5); padding: 4px 6px; border-radius: 4px; font-size: 11px; margin-bottom: 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid rgba(79, 70, 229, 0.2); box-shadow: none;" title="${t.subject}">${t.subject}</div>`).join("");
 				html += `<td style="height: 100px; vertical-align: top; position: relative; border: 1px solid #e5e7eb; padding: 5px;">
 					<div style="font-weight: bold; margin-bottom: 5px; font-size: 12px; color: var(--td-text-muted); text-align: right;">${d}</div>
@@ -893,10 +913,10 @@ class TaskDashboard {
 
 	open_status_change_dialog(task_id, current_status) {
 		const d = new frappe.ui.Dialog({
-			title: __("Change Status & Add Timesheet"),
+			title: __("Change Status & Add Activity"),
 			fields: [
 				{ label: "New Status", fieldname: "status", fieldtype: "Select", options: this.status_options, default: current_status, reqd: 1 },
-				{ fieldtype: "Section Break", label: "Timesheet Details (Mandatory)" },
+				{ fieldtype: "Section Break", label: "Activity Details (Mandatory)" },
 				{ label: "Date", fieldname: "date", fieldtype: "Date", reqd: 1, default: frappe.datetime.get_today() },
 				{ label: "Done By", fieldname: "done_by", fieldtype: "Link", options: "User", reqd: 1, default: frappe.session.user },
 				{ label: "Work Done", fieldname: "work_done", fieldtype: "Text", reqd: 1 }
@@ -911,8 +931,12 @@ class TaskDashboard {
 						if (r.message) {
 							let task = r.message;
 							task.status = v.status;
-							if (!task.custom_activity) task.custom_activity = [];
-							task.custom_activity.push({
+							if (v.status === 'Completed') {
+								task.completed_on = frappe.datetime.get_today();
+								task.completed_by = frappe.session.user;
+							}
+							if (!task.task_activity) task.task_activity = [];
+							task.task_activity.push({
 								doctype: "Task Activity",
 								date: v.date,
 								work_done: v.work_done,
@@ -937,7 +961,11 @@ class TaskDashboard {
 				});
 			}
 		});
-		d.onhide = () => d.$wrapper.remove();
+		d.onhide = () => {
+			setTimeout(() => {
+				if (d && d.$wrapper) d.$wrapper.remove();
+			}, 300);
+		};
 		d.show();
 	}
 
@@ -993,13 +1021,13 @@ class TaskDashboard {
 		});
 		if (this.pr_filters.contributer) this.contributer_filter.set_value(this.pr_filters.contributer);
 
-		container.on("change", ".td-f-sel", (e) => {
+		container.off("change", ".td-f-sel").on("change", ".td-f-sel", (e) => {
 			this.pr_filters[$(e.currentTarget).data("filter")] = $(e.currentTarget).val();
 			this.pr_page_start = 0;
 			this.load_contributions(true);
 		});
 
-		container.on("click", ".td-task-card, .td-task-list-row", (e) => {
+		container.off("click", ".td-task-card, .td-task-list-row").on("click", ".td-task-card, .td-task-list-row", (e) => {
 			if ($(e.target).closest('.td-btn-timesheet').length) return; // Prevent navigation if clicking timesheet button
 			const id = $(e.currentTarget).data("id");
 			if (id) frappe.set_route("Form", "Open Source Contribution", id);
@@ -1278,7 +1306,11 @@ class TaskDashboard {
 				});
 			}
 		});
-		d.onhide = () => d.$wrapper.remove();
+		d.onhide = () => {
+			setTimeout(() => {
+				if (d && d.$wrapper) d.$wrapper.remove();
+			}, 300);
+		};
 		d.show();
 	}
 }
