@@ -60,6 +60,12 @@ def create_do_task_workspace():
             "link_type": "Page",
             "link_to": "project_owner_dashboard"
         })
+        doc.append("links", {
+            "label": "Project Dashboard",
+            "type": "Link",
+            "link_type": "Page",
+            "link_to": "project_dashboard"
+        })
         doc.insert(ignore_permissions=True)
         frappe.db.commit()
     else:
@@ -81,7 +87,8 @@ def create_do_task_workspace():
         
         for label, page_name in [
             ("Task Dashboard", "task_dashboard"),
-            ("Project Owner Dashboard", "project_owner_dashboard")
+            ("Project Owner Dashboard", "project_owner_dashboard"),
+            ("Project Dashboard", "project_dashboard")
         ]:
             if page_name not in existing_links:
                 doc.append("links", {

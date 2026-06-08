@@ -30,6 +30,7 @@ class ProjectOwnerDashboard {
 		this.filters = { status: "", priority: "", project: "", assigned_to: "" };
 		this.search_query = "";
 		this.current_view = "tasks";
+		this.calendar_date = new Date();
 		this.owned_projects = [];
 		this.debounce_timer = null;
 		
@@ -106,9 +107,20 @@ class ProjectOwnerDashboard {
 						<div id="td-owned-projects-list"></div>
 					</div>
 					<div class="td-sidebar-section">
-						<div class="td-sidebar-section-title">${__("Navigation")}</div>
+						<div class="td-sidebar-section-title">${__("Task")}</div>
+						<div class="td-nav-item" data-route="task_dashboard"><i class="fa fa-list"></i> ${__("Task Board")}</div>
 						<div class="td-nav-item active" data-view="tasks"><i class="fa fa-list"></i> ${__("Project Tasks")}</div>
 						<div class="td-nav-item" data-view="reports"><i class="fa fa-pie-chart"></i> ${__("Analytics")}</div>
+					</div>
+					<div class="td-sidebar-section">
+						<div class="td-sidebar-section-title">${__("Project")}</div>
+						<div class="td-nav-item" data-route="project_dashboard"><i class="fa fa-folder-open"></i> ${__("Project Dashboard")}</div>
+						<div class="td-nav-item td-nav-item-current"><i class="fa fa-briefcase"></i> ${__("Project Owner Dashboard")}</div>
+					</div>
+					<div class="td-sidebar-section">
+						<div class="td-sidebar-section-title">${__("Contribution")}</div>
+						<div class="td-nav-item" data-route="task_dashboard/contributions"><i class="fa fa-github"></i> ${__("Contribution Dashboard")}</div>
+						<div class="td-nav-item" data-route="task_dashboard/pr_reports"><i class="fa fa-trophy"></i> ${__("PR Analysis")}</div>
 					</div>
 				</aside>
 				<div class="td-sidebar-overlay"></div>
@@ -170,6 +182,13 @@ class ProjectOwnerDashboard {
 		main.on("click", ".td-nav-item", (e) => {
 			const $item = $(e.currentTarget);
 			const view = $item.data("view");
+			const route = $item.data("route");
+
+			if (route) {
+				frappe.set_route(route.split('/'));
+				return;
+			}
+
 			if (view) {
 				this.current_view = view;
 				this.page_start = 0; 
@@ -228,6 +247,16 @@ class ProjectOwnerDashboard {
 			}
 		});
 
+		main.on("click", ".td-cal-prev", () => {
+			this.calendar_date.setMonth(this.calendar_date.getMonth() - 1);
+			this.load_tasks(true);
+		});
+
+		main.on("click", ".td-cal-next", () => {
+			this.calendar_date.setMonth(this.calendar_date.getMonth() + 1);
+			this.load_tasks(true);
+		});
+
 		main.on("input", "#td-task-search", (e) => {
 			clearTimeout(this.debounce_timer);
 			this.debounce_timer = setTimeout(() => {
@@ -283,7 +312,13 @@ class ProjectOwnerDashboard {
 	render_tasks_frame(container) {
 		const status_options_html = (this.status_options || []).map(opt => `<option value="${opt}">${opt}</option>`).join("");
 		container.html(`
-			<div class="td-filters">
+			<div class="td-filter-bar">
+				<button class="td-btn-filter-toggle" id="td-btn-filter-toggle">
+					<i class="fa fa-filter"></i> ${__("Filters")}
+				</button>
+				<div class="td-active-filters" id="td-active-filters"></div>
+			</div>
+			<div class="td-filters-panel" id="td-filters-panel" style="display: none;">
 				<div class="td-filter-item">
 					<label>Status</label>
 					<select data-filter="status" class="td-f-sel">
@@ -301,14 +336,33 @@ class ProjectOwnerDashboard {
 		container.find('[data-filter="status"]').val(this.filters.status);
 		container.find('[data-filter="priority"]').val(this.filters.priority);
 
+		this.is_rendering = true;
 		this.user_filter = frappe.ui.form.make_control({
-			df: { fieldtype: "Link", options: "User", placeholder: "Assignee", onchange: () => { this.filters.assigned_to = this.user_filter.get_value(); this.page_start = 0; this.load_tasks(true); }},
+			df: { fieldtype: "Link", options: "User", placeholder: "Assignee", onchange: () => { if(this.is_rendering) return; this.filters.assigned_to = this.user_filter.get_value(); this.page_start = 0; this.load_tasks(true); }},
 			parent: container.find("#f-user"), render_input: true
 		});
 		if (this.filters.assigned_to) this.user_filter.set_value(this.filters.assigned_to);
+		setTimeout(() => { this.is_rendering = false; }, 100);
 
 		container.off("change", ".td-f-sel").on("change", ".td-f-sel", (e) => {
 			this.filters[$(e.currentTarget).data("filter")] = $(e.currentTarget).val();
+			this.page_start = 0;
+			this.load_tasks(true);
+		});
+
+		container.off("click", "#td-btn-filter-toggle").on("click", "#td-btn-filter-toggle", (e) => {
+			$(e.currentTarget).toggleClass("active");
+			container.find("#td-filters-panel").slideToggle(200);
+		});
+
+		container.off("click", ".td-filter-remove").on("click", ".td-filter-remove", (e) => {
+			const filter_key = $(e.currentTarget).data("key");
+			if (filter_key === "assigned_to") {
+				this.user_filter.set_value("");
+			} else {
+				this.filters[filter_key] = "";
+				container.find(`[data-filter="${filter_key}"]`).val("");
+			}
 			this.page_start = 0;
 			this.load_tasks(true);
 		});
@@ -335,6 +389,16 @@ class ProjectOwnerDashboard {
 		});
 	}
 
+	render_active_filters() {
+		const container = this.page.main.find("#td-active-filters");
+		if (!container.length) return;
+		let pills_html = "";
+		if (this.filters.status) pills_html += `<span class="td-filter-pill">Status: ${this.filters.status} <i class="fa fa-times td-filter-remove" data-key="status"></i></span>`;
+		if (this.filters.priority) pills_html += `<span class="td-filter-pill">Priority: ${this.filters.priority} <i class="fa fa-times td-filter-remove" data-key="priority"></i></span>`;
+		if (this.filters.assigned_to) pills_html += `<span class="td-filter-pill">Assignee: ${this.filters.assigned_to} <i class="fa fa-times td-filter-remove" data-key="assigned_to"></i></span>`;
+		container.html(pills_html);
+	}
+
 	async load_tasks(force = false) {
 		const container = this.page.main.find("#td-task-container");
 		if (force) {
@@ -347,6 +411,19 @@ class ProjectOwnerDashboard {
 		if (this.filters.priority) filters.push(["priority", "=", this.filters.priority]);
 		if (this.filters.assigned_to) filters.push(["_assign", "like", `%${this.filters.assigned_to}%`]);
 		if (this.search_query) filters.push(["subject", "like", `%${this.search_query}%`]);
+
+		if (this.view_type === 'calendar') {
+			let year = this.calendar_date.getFullYear();
+			let month = this.calendar_date.getMonth();
+			let firstDay = new Date(year, month, 1);
+			let lastDay = new Date(year, month + 1, 0);
+			let get_date_str = (d) => {
+				let day = d.getDate();
+				let m = d.getMonth() + 1;
+				return d.getFullYear() + '-' + (m <= 9 ? '0' + m : m) + '-' + (day <= 9 ? '0' + day : day);
+			};
+			filters.push(["exp_end_date", "between", [get_date_str(firstDay), get_date_str(lastDay)]]);
+		}
 
 		try {
 			const list_limit = this.view_type === 'calendar' ? 1000 : this.page_length;
@@ -366,6 +443,7 @@ class ProjectOwnerDashboard {
 			this.total_tasks = total;
 			this.render_task_cards(container, tasks);
 			this.render_pagination();
+			this.render_active_filters();
 			container.css("opacity", "1");
 		} catch (e) {
 			container.html('<div class="td-error">Failed to load tasks.</div>');
@@ -509,21 +587,41 @@ class ProjectOwnerDashboard {
 		`);
 	}
 
+	render_active_analytics_filters() {
+		const container = this.page.main.find("#td-active-analytics-filters");
+		if (!container.length) return;
+		let pills_html = "";
+		
+		const s_type = this.page.main.find("#td-status-chart-type").val() || 'donut';
+		if (s_type !== 'donut') pills_html += `<span class="td-filter-pill">Status Chart: ${s_type} <i class="fa fa-times td-analytics-filter-remove" data-key="status_chart"></i></span>`;
+		
+		const p_type = this.page.main.find("#td-priority-chart-type").val() || 'bar';
+		if (p_type !== 'bar') pills_html += `<span class="td-filter-pill">Priority Chart: ${p_type} <i class="fa fa-times td-analytics-filter-remove" data-key="priority_chart"></i></span>`;
+
+		container.html(pills_html);
+	}
+
 	render_reports_frame(container) {
 		container.html(`
-			<div class="td-chart-controls" style="margin-bottom: 15px; display: flex; gap: 15px;">
-				<div>
-					<label style="font-size: 12px; font-weight: bold;">Status Chart Type:</label>
-					<select id="td-status-chart-type" class="form-control" style="width: 150px; display: inline-block;">
+			<div class="td-filter-bar">
+				<button class="td-btn-filter-toggle" id="td-btn-analytics-filter-toggle">
+					<i class="fa fa-sliders"></i> ${__("Chart Settings")}
+				</button>
+				<div class="td-active-filters" id="td-active-analytics-filters"></div>
+			</div>
+			<div class="td-filters-panel" id="td-analytics-filters-panel" style="display: none;">
+				<div class="td-filter-item">
+					<label>Status Chart Type</label>
+					<select id="td-status-chart-type" class="td-analytics-f-sel">
 						<option value="donut">Donut</option>
 						<option value="pie">Pie</option>
 						<option value="bar">Bar</option>
 						<option value="line">Line</option>
 					</select>
 				</div>
-				<div>
-					<label style="font-size: 12px; font-weight: bold;">Priority Chart Type:</label>
-					<select id="td-priority-chart-type" class="form-control" style="width: 150px; display: inline-block;">
+				<div class="td-filter-item">
+					<label>Priority Chart Type</label>
+					<select id="td-priority-chart-type" class="td-analytics-f-sel">
 						<option value="bar">Bar</option>
 						<option value="donut">Donut</option>
 						<option value="pie">Pie</option>
@@ -539,6 +637,20 @@ class ProjectOwnerDashboard {
 
 		container.find("#td-status-chart-type, #td-priority-chart-type").on("change", () => {
 			this.render_analytics();
+		});
+
+		container.off("click", "#td-btn-analytics-filter-toggle").on("click", "#td-btn-analytics-filter-toggle", (e) => {
+			$(e.currentTarget).toggleClass("active");
+			container.find("#td-analytics-filters-panel").slideToggle(200);
+		});
+
+		container.off("click", ".td-analytics-filter-remove").on("click", ".td-analytics-filter-remove", (e) => {
+			const filter_key = $(e.currentTarget).data("key");
+			if (filter_key === "status_chart") {
+				container.find("#td-status-chart-type").val("donut").trigger("change");
+			} else if (filter_key === "priority_chart") {
+				container.find("#td-priority-chart-type").val("bar").trigger("change");
+			}
 		});
 	}
 
@@ -559,57 +671,34 @@ class ProjectOwnerDashboard {
 			const status_chart_type = container.find("#td-status-chart-type").val() || 'donut';
 			const priority_chart_type = container.find("#td-priority-chart-type").val() || 'bar';
 
-			new frappe.Chart("#c-status", { title: "By Status", data: { labels: Object.keys(s_data), datasets: [{ values: Object.values(s_data) }] }, type: status_chart_type, height: 200 });
-			new frappe.Chart("#c-priority", { title: "By Priority", data: { labels: Object.keys(p_data), datasets: [{ values: Object.values(p_data) }] }, type: priority_chart_type, height: 200 });
-		} catch (e) {}
+			new frappe.Chart("#c-status", { title: "By Status", data: { labels: Object.keys(s_data), datasets: [{ values: Object.values(s_data) }] }, type: status_chart_type, height: 200, colors: ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'] });
+			new frappe.Chart("#c-priority", { title: "By Priority", data: { labels: Object.keys(p_data), datasets: [{ values: Object.values(p_data) }] }, type: priority_chart_type, height: 200, colors: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#ec4899'] });
+			this.render_active_analytics_filters();
+		} catch (e) {
+			console.error("Analytics error", e);
+			container.find("#c-status").html('<div class="td-error">Failed to load status chart.</div>');
+			container.find("#c-priority").html('<div class="td-error">Failed to load priority chart.</div>');
+		}
 	}
 
 	open_task_dialog() {
-		const d = new frappe.ui.Dialog({
-			title: __("New Task for {0}", [this.filters.project]),
-			fields: [
-				{ label: "Subject", fieldname: "subject", fieldtype: "Data", reqd: 1 },
-				{ label: "Project", fieldname: "project", fieldtype: "Link", options: "Project", default: this.filters.project, read_only: 1 },
-				{ label: "Assign To", fieldname: "assign_to", fieldtype: "Link", options: "User" },
-				{ label: "Task Group", fieldname: "custom_task_group", fieldtype: "Link", options: "Task Group" },
-				{ label: "Priority", fieldname: "priority", fieldtype: "Select", options: ["Low", "Medium", "High", "Urgent"], default: "Medium" },
-				{ label: "End Date", fieldname: "exp_end_date", fieldtype: "Date" }
-			],
-			primary_action_label: "Create",
-			primary_action: (v) => {
-				const assignee = v.assign_to; delete v.assign_to;
-				frappe.call({
-					method: "frappe.client.insert",
-					args: { doc: { doctype: "Task", ...v } },
-					callback: (r) => {
-						if (r.message && assignee) {
-							frappe.call({ method: "frappe.desk.form.assign_to.add", args: { doctype: "Task", name: r.message.name, assign_to: [assignee] } });
-						}
-						d.hide(); this.load_tasks(true);
-						frappe.show_alert({ message: "Task Created", indicator: "green" });
-					}
-				});
-			}
+		frappe.new_doc("Task", {
+			project: this.filters.project || ""
 		});
-		d.onhide = () => {
-			setTimeout(() => {
-				if (d && d.$wrapper) d.$wrapper.remove();
-			}, 300);
-		};
-		d.show();
 	}
 
 	render_calendar_view(container, tasks) {
 		container.removeClass("td-task-list td-task-grid").addClass("td-task-calendar");
-		let date = new Date();
-		let month = date.getMonth();
-		let year = date.getFullYear();
+		let month = this.calendar_date.getMonth();
+		let year = this.calendar_date.getFullYear();
 		let firstDay = new Date(year, month, 1).getDay();
 		let daysInMonth = new Date(year, month + 1, 0).getDate();
 
-		let html = `<div class="td-calendar-wrapper" style="background: white; border: 1px solid var(--td-border); border-radius: 8px; padding: 15px; margin-top: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+		let html = `<div class="td-calendar-wrapper" style="background: white; border: 1px solid var(--td-border); border-radius: 8px; padding: 15px; margin-top: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow-x: auto;">
 			<div style="display: flex; justify-content: space-between; margin-bottom: 15px; align-items: center;">
-				<h3 style="margin: 0; font-size: 18px; color: var(--td-text-main);"><i class="fa fa-calendar" style="color: var(--td-primary); margin-right: 8px;"></i>${date.toLocaleString('default', { month: 'long' })} ${year}</h3>
+				<button class="btn btn-default btn-sm td-cal-prev"><i class="fa fa-chevron-left"></i></button>
+				<h3 style="margin: 0; font-size: 18px; color: var(--td-text-main);"><i class="fa fa-calendar" style="color: var(--td-primary); margin-right: 8px;"></i>${this.calendar_date.toLocaleString('default', { month: 'long' })} ${year}</h3>
+				<button class="btn btn-default btn-sm td-cal-next"><i class="fa fa-chevron-right"></i></button>
 			</div>
 			<table class="table table-bordered td-calendar-table" style="width: 100%; table-layout: fixed; border-collapse: collapse;">
 				<thead><tr>

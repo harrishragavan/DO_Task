@@ -11,7 +11,12 @@ frappe.pages["task_dashboard"].on_page_load = function (wrapper) {
 
 frappe.pages["task_dashboard"].on_page_show = function (wrapper) {
 	if (wrapper._task_dashboard) {
-		wrapper._task_dashboard.load_content();
+		let route = frappe.get_route();
+		if (route.length > 1 && ["tasks", "reports", "contributions", "pr_reports"].includes(route[1])) {
+			wrapper._task_dashboard.switch_view(route[1]);
+		} else {
+			wrapper._task_dashboard.load_content();
+		}
 	}
 };
 
@@ -39,6 +44,7 @@ class TaskDashboard {
 		this.pr_search_query = "";
 
 		this.current_view = "tasks";
+		this.calendar_date = new Date();
 		this.debounce_timer = null;
 
 		frappe.require("/assets/do_task/css/task_dashboard.css");
@@ -51,6 +57,11 @@ class TaskDashboard {
 			this.fetch_status_options(),
 			this.fetch_pr_status_options()
 		]);
+		let route = frappe.get_route();
+		if (route.length > 1 && ["tasks", "reports", "contributions", "pr_reports"].includes(route[1])) {
+			this.current_view = route[1];
+		}
+		
 		this.render_shell();
 		this.update_view_active_class();
 		this.bind_events();
@@ -100,10 +111,18 @@ class TaskDashboard {
 			<div class="td-dashboard-wrapper">
 				<aside class="td-sidebar">
 					<div class="td-sidebar-section">
-						<div class="td-sidebar-section-title">${__("Navigation")}</div>
+						<div class="td-sidebar-section-title">${__("Task")}</div>
 						<div class="td-nav-item active" data-view="tasks"><i class="fa fa-list"></i> ${__("Task Board")}</div>
 						<div class="td-nav-item" data-view="reports"><i class="fa fa-pie-chart"></i> ${__("Task Analytics")}</div>
-						<div class="td-nav-item" data-view="contributions"><i class="fa fa-github"></i> ${__("Contribution")}</div>
+					</div>
+					<div class="td-sidebar-section">
+						<div class="td-sidebar-section-title">${__("Project")}</div>
+						<div class="td-nav-item" data-route="project_dashboard"><i class="fa fa-folder-open"></i> ${__("Project Dashboard")}</div>
+						<div class="td-nav-item" data-route="project_owner_dashboard"><i class="fa fa-briefcase"></i> ${__("Project Owner Dashboard")}</div>
+					</div>
+					<div class="td-sidebar-section">
+						<div class="td-sidebar-section-title">${__("Contribution")}</div>
+						<div class="td-nav-item" data-view="contributions"><i class="fa fa-github"></i> ${__("Contribution Dashboard")}</div>
 						<div class="td-nav-item" data-view="pr_reports"><i class="fa fa-trophy"></i> ${__("PR Analysis")}</div>
 					</div>
 					<div class="td-sidebar-section">
@@ -121,8 +140,46 @@ class TaskDashboard {
 						</div>
 						<div class="td-actions">
 							<div class="td-search-input-wrap">
-								<i class="fa fa-search"></i>
+								<div style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--td-text-light); display: flex;">${frappe.utils.icon('search', 'sm')}</div>
 								<input type="text" id="td-task-search" placeholder="${__("Search...")}">
+							</div>
+							<div class="td-notification-wrap">
+								<button class="td-btn-notification" id="td-btn-notification" title="${__("Notifications")}">
+									<i class="fa fa-bell"></i>
+									<span class="td-notification-badge">3</span>
+								</button>
+								<div class="td-notification-dropdown" id="td-notification-dropdown">
+									<div class="td-notification-header">
+										<h3>${__("Notifications")}</h3>
+										<button id="td-mark-all-read">${__("Mark all as read")}</button>
+									</div>
+									<div class="td-notification-body">
+										<div class="td-notification-item unread">
+											<div class="td-notification-icon"><i class="fa fa-info-circle text-blue"></i></div>
+											<div class="td-notification-content">
+												<p><strong>System Update:</strong> DoTask version 16 is now live.</p>
+												<span class="td-notification-time">10 mins ago</span>
+											</div>
+										</div>
+										<div class="td-notification-item unread">
+											<div class="td-notification-icon"><i class="fa fa-tasks text-green"></i></div>
+											<div class="td-notification-content">
+												<p><strong>New Task Assigned:</strong> Check the latest bug report.</p>
+												<span class="td-notification-time">1 hour ago</span>
+											</div>
+										</div>
+										<div class="td-notification-item unread">
+											<div class="td-notification-icon"><i class="fa fa-exclamation-triangle text-orange"></i></div>
+											<div class="td-notification-content">
+												<p><strong>High Priority:</strong> Respond to pending PRs.</p>
+												<span class="td-notification-time">2 hours ago</span>
+											</div>
+										</div>
+									</div>
+									<div class="td-notification-footer">
+										<a href="#">${__("View all notifications")}</a>
+									</div>
+								</div>
 							</div>
 							<div class="td-dropdown">
 								<button class="td-btn-menu" id="td-btn-menu-trigger" title="${__("Options")}">
@@ -164,6 +221,12 @@ class TaskDashboard {
 			const $item = $(e.currentTarget);
 			const view = $item.data("view");
 			const action = $item.data("action");
+			const route = $item.data("route");
+
+			if (route) {
+				frappe.set_route(route.split('/'));
+				return;
+			}
 
 			if (view) {
 				this.current_view = view;
@@ -204,10 +267,24 @@ class TaskDashboard {
 		main.off("click", "#td-btn-menu-trigger").on("click", "#td-btn-menu-trigger", (e) => {
 			e.stopPropagation();
 			main.find("#td-dropdown-menu-content").toggleClass("active");
+			main.find("#td-notification-dropdown").removeClass("active");
+		});
+
+		main.off("click", "#td-btn-notification").on("click", "#td-btn-notification", (e) => {
+			e.stopPropagation();
+			main.find("#td-notification-dropdown").toggleClass("active");
+			main.find("#td-dropdown-menu-content").removeClass("active");
+		});
+
+		main.off("click", "#td-mark-all-read").on("click", "#td-mark-all-read", (e) => {
+			e.stopPropagation();
+			main.find(".td-notification-item").removeClass("unread");
+			main.find(".td-notification-badge").hide();
 		});
 
 		$(document).off("click.td-menu-close").on("click.td-menu-close", () => {
 			main.find("#td-dropdown-menu-content").removeClass("active");
+			main.find("#td-notification-dropdown").removeClass("active");
 		});
 
 		main.on("click", "#td-btn-reload", () => {
@@ -253,6 +330,16 @@ class TaskDashboard {
 				this.pr_page_start = 0;
 				this.load_contributions(true);
 			}
+		});
+
+		main.on("click", ".td-cal-prev", () => {
+			this.calendar_date.setMonth(this.calendar_date.getMonth() - 1);
+			this.load_tasks(true);
+		});
+
+		main.on("click", ".td-cal-next", () => {
+			this.calendar_date.setMonth(this.calendar_date.getMonth() + 1);
+			this.load_tasks(true);
 		});
 
 		main.on("input", "#td-task-search", (e) => {
@@ -341,10 +428,27 @@ class TaskDashboard {
 		}
 	}
 
+	render_active_filters() {
+		const container = this.page.main.find("#td-active-filters");
+		if (!container.length) return;
+		let pills_html = "";
+		if (this.filters.status) pills_html += `<span class="td-filter-pill">Status: ${this.filters.status} <i class="fa fa-times td-filter-remove" data-key="status"></i></span>`;
+		if (this.filters.priority) pills_html += `<span class="td-filter-pill">Priority: ${this.filters.priority} <i class="fa fa-times td-filter-remove" data-key="priority"></i></span>`;
+		if (this.filters.project) pills_html += `<span class="td-filter-pill">Project: ${this.filters.project} <i class="fa fa-times td-filter-remove" data-key="project"></i></span>`;
+		if (this.filters.assigned_to) pills_html += `<span class="td-filter-pill">Assignee: ${this.filters.assigned_to} <i class="fa fa-times td-filter-remove" data-key="assigned_to"></i></span>`;
+		container.html(pills_html);
+	}
+
 	render_tasks_frame(container) {
 		const status_options_html = (this.status_options || []).map(opt => `<option value="${opt}">${opt}</option>`).join("");
 		container.html(`
-			<div class="td-filters">
+			<div class="td-filter-bar">
+				<button class="td-btn-filter-toggle" id="td-btn-filter-toggle">
+					<i class="fa fa-filter"></i> ${__("Filters")}
+				</button>
+				<div class="td-active-filters" id="td-active-filters"></div>
+			</div>
+			<div class="td-filters-panel" id="td-filters-panel" style="display: none;">
 				<div class="td-filter-item">
 					<label>Status</label>
 					<select data-filter="status" class="td-f-sel">
@@ -364,20 +468,42 @@ class TaskDashboard {
 		container.find('[data-filter="status"]').val(this.filters.status);
 		container.find('[data-filter="priority"]').val(this.filters.priority);
 
+		this.is_rendering = true;
 		this.project_filter = frappe.ui.form.make_control({
-			df: { fieldtype: "Link", options: "Project", placeholder: "Project", onchange: () => { this.filters.project = this.project_filter.get_value(); this.page_start = 0; this.load_tasks(true); } },
+			df: { fieldtype: "Link", options: "Project", placeholder: "Project", onchange: () => { if(this.is_rendering) return; this.filters.project = this.project_filter.get_value(); this.page_start = 0; this.load_tasks(true); } },
 			parent: container.find("#f-proj"), render_input: true
 		});
 		if (this.filters.project) this.project_filter.set_value(this.filters.project);
 
 		this.user_filter = frappe.ui.form.make_control({
-			df: { fieldtype: "Link", options: "User", placeholder: "Assignee", onchange: () => { this.filters.assigned_to = this.user_filter.get_value(); this.page_start = 0; this.load_tasks(true); } },
+			df: { fieldtype: "Link", options: "User", placeholder: "Assignee", onchange: () => { if(this.is_rendering) return; this.filters.assigned_to = this.user_filter.get_value(); this.page_start = 0; this.load_tasks(true); } },
 			parent: container.find("#f-user"), render_input: true
 		});
 		if (this.filters.assigned_to) this.user_filter.set_value(this.filters.assigned_to);
+		
+		setTimeout(() => { this.is_rendering = false; }, 100);
 
 		container.off("change", ".td-f-sel").on("change", ".td-f-sel", (e) => {
 			this.filters[$(e.currentTarget).data("filter")] = $(e.currentTarget).val();
+			this.page_start = 0;
+			this.load_tasks(true);
+		});
+
+		container.off("click", "#td-btn-filter-toggle").on("click", "#td-btn-filter-toggle", (e) => {
+			$(e.currentTarget).toggleClass("active");
+			container.find("#td-filters-panel").slideToggle(200);
+		});
+
+		container.off("click", ".td-filter-remove").on("click", ".td-filter-remove", (e) => {
+			const filter_key = $(e.currentTarget).data("key");
+			if (filter_key === "project") {
+				this.project_filter.set_value("");
+			} else if (filter_key === "assigned_to") {
+				this.user_filter.set_value("");
+			} else {
+				this.filters[filter_key] = "";
+				container.find(`[data-filter="${filter_key}"]`).val("");
+			}
 			this.page_start = 0;
 			this.load_tasks(true);
 		});
@@ -422,6 +548,19 @@ class TaskDashboard {
 		if (this.filters.assigned_to) filters.push(["_assign", "like", `%${this.filters.assigned_to}%`]);
 		if (this.search_query) filters.push(["subject", "like", `%${this.search_query}%`]);
 
+		if (this.view_type === 'calendar') {
+			let year = this.calendar_date.getFullYear();
+			let month = this.calendar_date.getMonth();
+			let firstDay = new Date(year, month, 1);
+			let lastDay = new Date(year, month + 1, 0);
+			let get_date_str = (d) => {
+				let day = d.getDate();
+				let m = d.getMonth() + 1;
+				return d.getFullYear() + '-' + (m <= 9 ? '0' + m : m) + '-' + (day <= 9 ? '0' + day : day);
+			};
+			filters.push(["exp_end_date", "between", [get_date_str(firstDay), get_date_str(lastDay)]]);
+		}
+
 		try {
 			const list_limit = this.view_type === 'calendar' ? 1000 : this.page_length;
 			const list_start = this.view_type === 'calendar' ? 0 : this.page_start;
@@ -442,6 +581,7 @@ class TaskDashboard {
 
 			this.render_task_cards(container, tasks);
 			this.render_pagination();
+			this.render_active_filters();
 			container.css("opacity", "1");
 		} catch (e) {
 			console.error(e);
@@ -614,21 +754,63 @@ class TaskDashboard {
 		}
 	}
 
+	render_active_analytics_filters() {
+		const container = this.page.main.find("#td-active-analytics-filters");
+		if (!container.length) return;
+		let pills_html = "";
+		
+		const r_type = this.page.main.find("#td-resource-type").val() || 'task';
+		pills_html += `<span class="td-filter-pill">Tracking: ${r_type} <i class="fa fa-times td-analytics-filter-remove" data-key="resource_type"></i></span>`;
+		
+		if (this.resource_specific_control) {
+			const spec_val = this.resource_specific_control.get_value();
+			if (spec_val) {
+				pills_html += `<span class="td-filter-pill">Specific: ${spec_val} <i class="fa fa-times td-analytics-filter-remove" data-key="specific"></i></span>`;
+			}
+		}
+
+		const s_type = this.page.main.find("#td-status-chart-type").val() || 'donut';
+		if (s_type !== 'donut') pills_html += `<span class="td-filter-pill">Status Chart: ${s_type} <i class="fa fa-times td-analytics-filter-remove" data-key="status_chart"></i></span>`;
+		
+		const p_type = this.page.main.find("#td-priority-chart-type").val() || 'bar';
+		if (p_type !== 'bar') pills_html += `<span class="td-filter-pill">Priority Chart: ${p_type} <i class="fa fa-times td-analytics-filter-remove" data-key="priority_chart"></i></span>`;
+
+		container.html(pills_html);
+	}
+
 	render_reports_frame(container) {
 		container.html(`
-			<div class="td-chart-controls" style="margin-bottom: 15px; display: flex; gap: 15px;">
-				<div>
-					<label style="font-size: 12px; font-weight: bold;">Status Chart Type:</label>
-					<select id="td-status-chart-type" class="form-control" style="width: 150px; display: inline-block;">
+			<div class="td-filter-bar">
+				<button class="td-btn-filter-toggle" id="td-btn-analytics-filter-toggle">
+					<i class="fa fa-sliders"></i> ${__("Chart Settings")}
+				</button>
+				<div class="td-active-filters" id="td-active-analytics-filters"></div>
+			</div>
+			<div class="td-filters-panel" id="td-analytics-filters-panel" style="display: none;">
+				<div class="td-filter-item">
+					<label>Resource Tracking Type</label>
+					<select id="td-resource-type" class="td-analytics-f-sel">
+						<option value="task">Task Based Tracking (Overall)</option>
+						<option value="assignee">Assignee Based Tracking</option>
+						<option value="project">Project Based Tracking</option>
+					</select>
+				</div>
+				<div class="td-filter-item" id="td-resource-specific-wrap" style="display: none;">
+					<label id="td-resource-specific-label">Select Resource</label>
+					<div id="td-resource-specific-control"></div>
+				</div>
+				<div class="td-filter-item">
+					<label id="td-chart-1-label">Status Chart Type</label>
+					<select id="td-status-chart-type" class="td-analytics-f-sel">
 						<option value="donut">Donut</option>
 						<option value="pie">Pie</option>
 						<option value="bar">Bar</option>
 						<option value="line">Line</option>
 					</select>
 				</div>
-				<div>
-					<label style="font-size: 12px; font-weight: bold;">Priority Chart Type:</label>
-					<select id="td-priority-chart-type" class="form-control" style="width: 150px; display: inline-block;">
+				<div class="td-filter-item">
+					<label id="td-chart-2-label">Priority Chart Type</label>
+					<select id="td-priority-chart-type" class="td-analytics-f-sel">
 						<option value="bar">Bar</option>
 						<option value="donut">Donut</option>
 						<option value="pie">Pie</option>
@@ -642,9 +824,58 @@ class TaskDashboard {
 			</div>
 		`);
 
+		this.resource_specific_control = null;
+
+		container.find("#td-resource-type").on("change", () => {
+			const type = container.find("#td-resource-type").val();
+			const wrap = container.find("#td-resource-specific-wrap");
+			const ctrl_div = container.find("#td-resource-specific-control");
+			ctrl_div.empty();
+			
+			if (type === 'assignee') {
+				wrap.show();
+				container.find("#td-resource-specific-label").text("Select Assignee:");
+				this.resource_specific_control = frappe.ui.form.make_control({
+					df: { fieldtype: "Link", options: "User", placeholder: "All Assignees", onchange: () => this.render_analytics() },
+					parent: ctrl_div, render_input: true
+				});
+			} else if (type === 'project') {
+				wrap.show();
+				container.find("#td-resource-specific-label").text("Select Project:");
+				this.resource_specific_control = frappe.ui.form.make_control({
+					df: { fieldtype: "Link", options: "Project", placeholder: "All Projects", onchange: () => this.render_analytics() },
+					parent: ctrl_div, render_input: true
+				});
+			} else {
+				wrap.hide();
+				this.resource_specific_control = null;
+			}
+			this.render_analytics();
+		});
+
 		container.find("#td-status-chart-type, #td-priority-chart-type").on("change", () => {
 			this.render_analytics();
 		});
+
+		container.off("click", "#td-btn-analytics-filter-toggle").on("click", "#td-btn-analytics-filter-toggle", (e) => {
+			$(e.currentTarget).toggleClass("active");
+			container.find("#td-analytics-filters-panel").slideToggle(200);
+		});
+
+		container.off("click", ".td-analytics-filter-remove").on("click", ".td-analytics-filter-remove", (e) => {
+			const filter_key = $(e.currentTarget).data("key");
+			if (filter_key === "resource_type") {
+				container.find("#td-resource-type").val("task").trigger("change");
+			} else if (filter_key === "specific" && this.resource_specific_control) {
+				this.resource_specific_control.set_value("");
+			} else if (filter_key === "status_chart") {
+				container.find("#td-status-chart-type").val("donut").trigger("change");
+			} else if (filter_key === "priority_chart") {
+				container.find("#td-priority-chart-type").val("bar").trigger("change");
+			}
+		});
+		
+		setTimeout(() => container.find("#td-resource-type").trigger("change"), 100);
 	}
 
 	async render_analytics() {
@@ -652,77 +883,132 @@ class TaskDashboard {
 		container.find(".td-stat-card").append('<div class="td-chart-loader">Loading Chart...</div>');
 
 		try {
+			const resource_type = container.find("#td-resource-type").val() || 'task';
+			let specific_value = null;
+			if (this.resource_specific_control) {
+				specific_value = this.resource_specific_control.get_value();
+			}
+			
 			const tasks = await frappe.db.get_list("Task", {
-				fields: ["status", "priority"],
+				fields: ["status", "priority", "_assign", "project"],
 				filters: { docstatus: 0 },
-				limit: 200
+				limit: 1000
 			});
 
 			container.find(".td-chart-loader").remove();
 
-			const s_data = {}; const p_data = {};
-			tasks.forEach(t => {
-				s_data[t.status] = (s_data[t.status] || 0) + 1;
-				p_data[t.priority] = (p_data[t.priority] || 0) + 1;
-			});
+			const data_1 = {}; 
+			const data_2 = {};
+
+			let title_1 = "";
+			let title_2 = "";
+			let colors_1 = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+			let colors_2 = ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#ec4899'];
+
+			if (resource_type === 'task') {
+				container.find("#td-chart-1-label").text("Status Chart Type:");
+				container.find("#td-chart-2-label").text("Priority Chart Type:");
+				title_1 = "Tasks by Status";
+				title_2 = "Tasks by Priority";
+				tasks.forEach(t => {
+					let stat = t.status || "Unknown";
+					let prio = t.priority || "Unknown";
+					data_1[stat] = (data_1[stat] || 0) + 1;
+					data_2[prio] = (data_2[prio] || 0) + 1;
+				});
+			} else if (resource_type === 'assignee') {
+				container.find("#td-chart-1-label").text(specific_value ? "Assignee Status Chart:" : "Assignee Chart Type:");
+				container.find("#td-chart-2-label").text(specific_value ? "Assignee Priority Chart:" : "Assignee Priority Chart:");
+				title_1 = specific_value ? `Status for ${specific_value}` : "Tasks by Assignee";
+				title_2 = specific_value ? `Priority for ${specific_value}` : "Urgent/High Priority by Assignee";
+				
+				tasks.forEach(t => {
+					let assignees = [];
+					try { assignees = JSON.parse(t._assign || "[]"); } catch (e) { assignees = []; }
+					
+					if (specific_value) {
+						if (assignees.includes(specific_value)) {
+							let stat = t.status || "Unknown";
+							let prio = t.priority || "Unknown";
+							data_1[stat] = (data_1[stat] || 0) + 1;
+							data_2[prio] = (data_2[prio] || 0) + 1;
+						}
+					} else {
+						if (assignees.length === 0) {
+							data_1["Unassigned"] = (data_1["Unassigned"] || 0) + 1;
+						} else {
+							assignees.forEach(a => {
+								data_1[a] = (data_1[a] || 0) + 1;
+								if (t.priority === "Urgent" || t.priority === "High") {
+									data_2[a] = (data_2[a] || 0) + 1;
+								}
+							});
+						}
+					}
+				});
+			} else if (resource_type === 'project') {
+				container.find("#td-chart-1-label").text(specific_value ? "Project Status Chart:" : "Project Chart Type:");
+				container.find("#td-chart-2-label").text(specific_value ? "Project Priority Chart:" : "Project Status Chart:");
+				title_1 = specific_value ? `Status for ${specific_value}` : "Tasks by Project";
+				title_2 = specific_value ? `Priority for ${specific_value}` : "Completed Tasks by Project";
+				
+				tasks.forEach(t => {
+					let proj = t.project || "No Project";
+					
+					if (specific_value) {
+						if (proj === specific_value) {
+							let stat = t.status || "Unknown";
+							let prio = t.priority || "Unknown";
+							data_1[stat] = (data_1[stat] || 0) + 1;
+							data_2[prio] = (data_2[prio] || 0) + 1;
+						}
+					} else {
+						data_1[proj] = (data_1[proj] || 0) + 1;
+						if (t.status === "Completed") {
+							data_2[proj] = (data_2[proj] || 0) + 1;
+						}
+					}
+				});
+			}
+
+			if (Object.keys(data_1).length === 0) data_1["No Data"] = 1;
+			if (Object.keys(data_2).length === 0) data_2["No Data"] = 1;
 
 			const status_chart_type = container.find("#td-status-chart-type").val() || 'donut';
 			const priority_chart_type = container.find("#td-priority-chart-type").val() || 'bar';
 
+			container.find("#c-status").empty();
+			container.find("#c-priority").empty();
+
 			new frappe.Chart("#c-status", {
-				title: "Tasks by Status",
-				data: { labels: Object.keys(s_data), datasets: [{ values: Object.values(s_data) }] },
+				title: title_1,
+				data: { labels: Object.keys(data_1), datasets: [{ values: Object.values(data_1) }] },
 				type: status_chart_type,
 				height: 250,
-				colors: ['#6366f1', '#10b981', '#f59e0b', '#ef4444']
+				colors: colors_1
 			});
 
 			new frappe.Chart("#c-priority", {
-				title: "Tasks by Priority",
-				data: { labels: Object.keys(p_data), datasets: [{ values: Object.values(p_data) }] },
+				title: title_2,
+				data: { labels: Object.keys(data_2), datasets: [{ values: Object.values(data_2) }] },
 				type: priority_chart_type,
 				height: 250,
-				colors: ['#ef4444', '#f59e0b', '#3b82f6', '#10b981']
+				colors: colors_2
 			});
+
+			this.render_active_analytics_filters();
 		} catch (e) {
 			console.error("Analytics error", e);
-			container.html('<div class="td-error">Failed to load analytics.</div>');
+			container.find(".td-chart-loader").remove();
+			container.find("#c-status").html('<div class="td-error">Failed to load status chart.</div>');
+			container.find("#c-priority").html('<div class="td-error">Failed to load priority chart.</div>');
 		}
 	}
 
 	open_task_dialog() {
-		const d = new frappe.ui.Dialog({
-			title: __("New Task"),
-			fields: [
-				{ label: "Subject", fieldname: "subject", fieldtype: "Data", reqd: 1 },
-				{ label: "Project", fieldname: "project", fieldtype: "Link", options: "Project" },
-				{ label: "Assign To", fieldname: "assign_to", fieldtype: "Link", options: "User" },
-				{ label: "Task Group", fieldname: "custom_task_group", fieldtype: "Link", options: "Task Group" },
-				{ label: "Priority", fieldname: "priority", fieldtype: "Select", options: ["Low", "Medium", "High", "Urgent"], default: "Medium" },
-				{ label: "End Date", fieldname: "exp_end_date", fieldtype: "Date" }
-			],
-			primary_action_label: "Create",
-			primary_action: (v) => {
-				const assignee = v.assign_to; delete v.assign_to;
-				frappe.call({
-					method: "frappe.client.insert",
-					args: { doc: { doctype: "Task", ...v } },
-					callback: (r) => {
-						if (r.message && assignee) {
-							frappe.call({ method: "frappe.desk.form.assign_to.add", args: { doctype: "Task", name: r.message.name, assign_to: [assignee] } });
-						}
-						d.hide(); this.load_tasks(true);
-						frappe.show_alert({ message: "Task Created", indicator: "green" });
-					}
-				});
-			}
+		frappe.new_doc("Task", {
+			project: this.filters.project || ""
 		});
-		d.onhide = () => {
-			setTimeout(() => {
-				if (d && d.$wrapper) d.$wrapper.remove();
-			}, 300);
-		};
-		d.show();
 	}
 
 	show_task_activity_dialog(task_id) {
@@ -857,15 +1143,16 @@ class TaskDashboard {
 
 	render_calendar_view(container, tasks) {
 		container.removeClass("td-task-list td-task-grid").addClass("td-task-calendar");
-		let date = new Date();
-		let month = date.getMonth();
-		let year = date.getFullYear();
+		let month = this.calendar_date.getMonth();
+		let year = this.calendar_date.getFullYear();
 		let firstDay = new Date(year, month, 1).getDay();
 		let daysInMonth = new Date(year, month + 1, 0).getDate();
 
-		let html = `<div class="td-calendar-wrapper" style="background: white; border: 1px solid var(--td-border); border-radius: 8px; padding: 15px; margin-top: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+		let html = `<div class="td-calendar-wrapper" style="background: white; border: 1px solid var(--td-border); border-radius: 8px; padding: 15px; margin-top: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); overflow-x: auto;">
 			<div style="display: flex; justify-content: space-between; margin-bottom: 15px; align-items: center;">
-				<h3 style="margin: 0; font-size: 18px; color: var(--td-text-main);"><i class="fa fa-calendar" style="color: var(--td-primary); margin-right: 8px;"></i>${date.toLocaleString('default', { month: 'long' })} ${year}</h3>
+				<button class="btn btn-default btn-sm td-cal-prev"><i class="fa fa-chevron-left"></i></button>
+				<h3 style="margin: 0; font-size: 18px; color: var(--td-text-main);"><i class="fa fa-calendar" style="color: var(--td-primary); margin-right: 8px;"></i>${this.calendar_date.toLocaleString('default', { month: 'long' })} ${year}</h3>
+				<button class="btn btn-default btn-sm td-cal-next"><i class="fa fa-chevron-right"></i></button>
 			</div>
 			<table class="table table-bordered td-calendar-table" style="width: 100%; table-layout: fixed; border-collapse: collapse;">
 				<thead><tr>
@@ -916,6 +1203,8 @@ class TaskDashboard {
 			title: __("Change Status & Add Activity"),
 			fields: [
 				{ label: "New Status", fieldname: "status", fieldtype: "Select", options: this.status_options, default: current_status, reqd: 1 },
+				{ label: "Completed On", fieldname: "completed_on", fieldtype: "Date", depends_on: "eval:doc.status==='Completed'", mandatory_depends_on: "eval:doc.status==='Completed'", default: frappe.datetime.get_today() },
+				{ label: "Completed By", fieldname: "completed_by", fieldtype: "Link", options: "User", depends_on: "eval:doc.status==='Completed'", mandatory_depends_on: "eval:doc.status==='Completed'", default: frappe.session.user },
 				{ fieldtype: "Section Break", label: "Activity Details (Mandatory)" },
 				{ label: "Date", fieldname: "date", fieldtype: "Date", reqd: 1, default: frappe.datetime.get_today() },
 				{ label: "Done By", fieldname: "done_by", fieldtype: "Link", options: "User", reqd: 1, default: frappe.session.user },
@@ -932,8 +1221,8 @@ class TaskDashboard {
 							let task = r.message;
 							task.status = v.status;
 							if (v.status === 'Completed') {
-								task.completed_on = frappe.datetime.get_today();
-								task.completed_by = frappe.session.user;
+								task.completed_on = v.completed_on || frappe.datetime.get_today();
+								task.completed_by = v.completed_by || frappe.session.user;
 							}
 							if (!task.task_activity) task.task_activity = [];
 							task.task_activity.push({
@@ -969,13 +1258,29 @@ class TaskDashboard {
 		d.show();
 	}
 
+	render_active_pr_filters() {
+		const container = this.page.main.find("#td-active-pr-filters");
+		if (!container.length) return;
+		let pills_html = "";
+		if (this.pr_filters.status) pills_html += `<span class="td-filter-pill">Status: ${this.pr_filters.status} <i class="fa fa-times td-pr-filter-remove" data-key="status"></i></span>`;
+		if (this.pr_filters.module) pills_html += `<span class="td-filter-pill">Module: ${this.pr_filters.module} <i class="fa fa-times td-pr-filter-remove" data-key="module"></i></span>`;
+		if (this.pr_filters.contributer) pills_html += `<span class="td-filter-pill">Contributor: ${this.pr_filters.contributer} <i class="fa fa-times td-pr-filter-remove" data-key="contributer"></i></span>`;
+		container.html(pills_html);
+	}
+
 	render_contributions_frame(container) {
 		const status_options_html = (this.pr_status_options || []).map(opt => `<option value="${opt}">${opt}</option>`).join("");
 		container.html(`
-			<div class="td-filters">
+			<div class="td-filter-bar">
+				<button class="td-btn-filter-toggle" id="td-btn-pr-filter-toggle">
+					<i class="fa fa-filter"></i> ${__("Filters")}
+				</button>
+				<div class="td-active-filters" id="td-active-pr-filters"></div>
+			</div>
+			<div class="td-filters-panel" id="td-pr-filters-panel" style="display: none;">
 				<div class="td-filter-item">
 					<label>Status</label>
-					<select data-filter="status" class="td-f-sel">
+					<select data-filter="status" class="td-pr-f-sel">
 						<option value="">All Status</option>
 						${status_options_html}
 					</select>
@@ -987,14 +1292,16 @@ class TaskDashboard {
 			<div id="td-pagination-container" class="td-pagination"></div>
 		`);
 
-		container.find('[data-filter="status"]').val(this.pr_filters.status);
+		container.find('.td-pr-f-sel[data-filter="status"]').val(this.pr_filters.status);
 
+		this.is_rendering = true;
 		this.module_filter = frappe.ui.form.make_control({
 			df: {
 				fieldtype: "Link",
 				options: "Task Group",
 				placeholder: "Module",
 				onchange: () => {
+					if(this.is_rendering) return;
 					this.pr_filters.module = this.module_filter.get_value();
 					this.pr_page_start = 0;
 					this.load_contributions(true);
@@ -1011,6 +1318,7 @@ class TaskDashboard {
 				options: "User",
 				placeholder: "Contributor",
 				onchange: () => {
+					if(this.is_rendering) return;
 					this.pr_filters.contributer = this.contributer_filter.get_value();
 					this.pr_page_start = 0;
 					this.load_contributions(true);
@@ -1020,9 +1328,29 @@ class TaskDashboard {
 			render_input: true
 		});
 		if (this.pr_filters.contributer) this.contributer_filter.set_value(this.pr_filters.contributer);
+		setTimeout(() => { this.is_rendering = false; }, 100);
 
-		container.off("change", ".td-f-sel").on("change", ".td-f-sel", (e) => {
+		container.off("change", ".td-pr-f-sel").on("change", ".td-pr-f-sel", (e) => {
 			this.pr_filters[$(e.currentTarget).data("filter")] = $(e.currentTarget).val();
+			this.pr_page_start = 0;
+			this.load_contributions(true);
+		});
+
+		container.off("click", "#td-btn-pr-filter-toggle").on("click", "#td-btn-pr-filter-toggle", (e) => {
+			$(e.currentTarget).toggleClass("active");
+			container.find("#td-pr-filters-panel").slideToggle(200);
+		});
+
+		container.off("click", ".td-pr-filter-remove").on("click", ".td-pr-filter-remove", (e) => {
+			const filter_key = $(e.currentTarget).data("key");
+			if (filter_key === "module") {
+				this.module_filter.set_value("");
+			} else if (filter_key === "contributer") {
+				this.contributer_filter.set_value("");
+			} else {
+				this.pr_filters[filter_key] = "";
+				container.find(`.td-pr-f-sel[data-filter="${filter_key}"]`).val("");
+			}
 			this.pr_page_start = 0;
 			this.load_contributions(true);
 		});
@@ -1066,6 +1394,7 @@ class TaskDashboard {
 			this.total_contributions = total;
 			this.render_contribution_cards(container, contributions);
 			this.render_pagination();
+			this.render_active_pr_filters();
 			container.css("opacity", "1");
 		} catch (e) {
 			console.error(e);
@@ -1154,21 +1483,41 @@ class TaskDashboard {
 		}
 	}
 
+	render_active_pr_analytics_filters() {
+		const container = this.page.main.find("#td-active-pr-analytics-filters");
+		if (!container.length) return;
+		let pills_html = "";
+		
+		const s_type = this.page.main.find("#td-pr-status-chart-type").val() || 'donut';
+		if (s_type !== 'donut') pills_html += `<span class="td-filter-pill">Status Chart: ${s_type} <i class="fa fa-times td-pr-analytics-filter-remove" data-key="status_chart"></i></span>`;
+		
+		const m_type = this.page.main.find("#td-pr-module-chart-type").val() || 'bar';
+		if (m_type !== 'bar') pills_html += `<span class="td-filter-pill">Module Chart: ${m_type} <i class="fa fa-times td-pr-analytics-filter-remove" data-key="module_chart"></i></span>`;
+
+		container.html(pills_html);
+	}
+
 	render_pr_reports_frame(container) {
 		container.html(`
-			<div class="td-chart-controls" style="margin-bottom: 15px; display: flex; gap: 15px;">
-				<div>
-					<label style="font-size: 12px; font-weight: bold;">Status Chart Type:</label>
-					<select id="td-pr-status-chart-type" class="form-control" style="width: 150px; display: inline-block;">
+			<div class="td-filter-bar">
+				<button class="td-btn-filter-toggle" id="td-btn-pr-analytics-filter-toggle">
+					<i class="fa fa-sliders"></i> ${__("Chart Settings")}
+				</button>
+				<div class="td-active-filters" id="td-active-pr-analytics-filters"></div>
+			</div>
+			<div class="td-filters-panel" id="td-pr-analytics-filters-panel" style="display: none;">
+				<div class="td-filter-item">
+					<label>Status Chart Type</label>
+					<select id="td-pr-status-chart-type" class="td-pr-analytics-f-sel">
 						<option value="donut">Donut</option>
 						<option value="pie">Pie</option>
 						<option value="bar">Bar</option>
 						<option value="line">Line</option>
 					</select>
 				</div>
-				<div>
-					<label style="font-size: 12px; font-weight: bold;">Module Chart Type:</label>
-					<select id="td-pr-module-chart-type" class="form-control" style="width: 150px; display: inline-block;">
+				<div class="td-filter-item">
+					<label>Module Chart Type</label>
+					<select id="td-pr-module-chart-type" class="td-pr-analytics-f-sel">
 						<option value="bar">Bar</option>
 						<option value="donut">Donut</option>
 						<option value="pie">Pie</option>
@@ -1191,10 +1540,27 @@ class TaskDashboard {
 		container.find("#td-pr-status-chart-type, #td-pr-module-chart-type").on("change", () => {
 			this.render_pr_analytics();
 		});
+
+		container.off("click", "#td-btn-pr-analytics-filter-toggle").on("click", "#td-btn-pr-analytics-filter-toggle", (e) => {
+			$(e.currentTarget).toggleClass("active");
+			container.find("#td-pr-analytics-filters-panel").slideToggle(200);
+		});
+
+		container.off("click", ".td-pr-analytics-filter-remove").on("click", ".td-pr-analytics-filter-remove", (e) => {
+			const filter_key = $(e.currentTarget).data("key");
+			if (filter_key === "status_chart") {
+				container.find("#td-pr-status-chart-type").val("donut").trigger("change");
+			} else if (filter_key === "module_chart") {
+				container.find("#td-pr-module-chart-type").val("bar").trigger("change");
+			}
+		});
 	}
 
 	async render_pr_analytics() {
 		const container = this.page.main.find("#td-view-content");
+		container.find("#pr-c-status").empty();
+		container.find("#pr-c-module").empty();
+		container.find(".td-chart-loader").remove();
 		container.find(".td-stat-card").append('<div class="td-chart-loader">Loading Chart...</div>');
 
 		try {
@@ -1238,6 +1604,8 @@ class TaskDashboard {
 				colors: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899']
 			});
 
+			this.render_active_pr_analytics_filters();
+
 			// Render Leaderboard
 			const sorted_leaders = Object.entries(leaders)
 				.sort((a, b) => b[1] - a[1])
@@ -1276,41 +1644,14 @@ class TaskDashboard {
 			}
 		} catch (e) {
 			console.error("PR Analytics error", e);
-			container.html('<div class="td-error">Failed to load analytics.</div>');
+			container.find(".td-chart-loader").remove();
+			container.find("#pr-c-status").html('<div class="td-error">Failed to load status chart.</div>');
+			container.find("#pr-c-module").html('<div class="td-error">Failed to load module chart.</div>');
+			container.find("#td-leaderboard-content").html('<div class="td-error">Failed to load leaderboard.</div>');
 		}
 	}
 
 	open_pr_dialog() {
-		const d = new frappe.ui.Dialog({
-			title: __("New Open Source Contribution"),
-			fields: [
-				{ label: "Subject", fieldname: "subject", fieldtype: "Data", reqd: 1 },
-				{ label: "Module", fieldname: "module", fieldtype: "Link", options: "Task Group", reqd: 1 },
-				{ label: "Status", fieldname: "status", fieldtype: "Select", options: ["Merged", "Open", "Closed", "Pending Review"], default: "Open", reqd: 1 },
-				{ label: "Contributor", fieldname: "contributer", fieldtype: "Link", options: "User", default: frappe.session.user },
-				{ label: "PR Descriptiom", fieldname: "pr_descriptiom", fieldtype: "Small Text" },
-				{ label: "Comments", fieldname: "comments", fieldtype: "Small Text" }
-			],
-			primary_action_label: "Create",
-			primary_action: (v) => {
-				frappe.call({
-					method: "frappe.client.insert",
-					args: { doc: { doctype: "Open Source Contribution", ...v } },
-					callback: (r) => {
-						if (!r.exc) {
-							d.hide();
-							frappe.show_alert({ message: __("Contribution created successfully"), indicator: "green" });
-							this.load_contributions(true);
-						}
-					}
-				});
-			}
-		});
-		d.onhide = () => {
-			setTimeout(() => {
-				if (d && d.$wrapper) d.$wrapper.remove();
-			}, 300);
-		};
-		d.show();
+		frappe.new_doc("Open Source Contribution");
 	}
 }
