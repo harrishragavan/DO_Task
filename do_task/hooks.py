@@ -256,10 +256,22 @@ export_python_type_annotations = True
 after_migrate = ["do_task.do_task.api.create_do_task_workspace", "do_task.setup.after_migrate"]
 
 fixtures = [
-	{
-		"dt": "Workspace",
-		"filters": [
-			["module", "=", "Do Task"]
-		]
-	}
+    {
+        "dt": "Workspace",
+        "filters": [
+            ["name", "=", "Do Task"]
+        ]
+    },
+    {
+        "dt": "Workspace Sidebar",
+        "filters": [
+            ["name", "=", "Do Task"]
+        ]
+    },
+    {
+        "dt": "Desktop Icon",
+        "filters": [
+            ["name", "=", "Do Task"]
+        ]
+    }
 ]
