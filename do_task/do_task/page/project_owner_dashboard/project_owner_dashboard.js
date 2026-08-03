@@ -749,6 +749,9 @@ class ProjectOwnerDashboard {
 			title: __("Change Status & Add Activity"),
 			fields: [
 				{ label: "New Status", fieldname: "status", fieldtype: "Select", options: this.status_options, default: current_status, reqd: 1 },
+				{ label: "Completed On", fieldname: "completed_on", fieldtype: "Date", depends_on: "eval:doc.status==='Completed'", mandatory_depends_on: "eval:doc.status==='Completed'", default: frappe.datetime.get_today() },
+				{ label: "Completed By", fieldname: "completed_by", fieldtype: "Link", options: "User", depends_on: "eval:doc.status==='Completed'", mandatory_depends_on: "eval:doc.status==='Completed'", default: frappe.session.user },
+				{ label: "Outcome Hrs", fieldname: "custom_outcome_hrs", fieldtype: "Data", depends_on: "eval:doc.status==='Completed'", mandatory_depends_on: "eval:doc.status==='Completed'" },
 				{ fieldtype: "Section Break", label: "Activity Details (Mandatory)" },
 				{ label: "Date", fieldname: "date", fieldtype: "Date", reqd: 1, default: frappe.datetime.get_today() },
 				{ label: "Done By", fieldname: "done_by", fieldtype: "Link", options: "User", reqd: 1, default: frappe.session.user },
@@ -765,8 +768,9 @@ class ProjectOwnerDashboard {
 							let task = r.message;
 							task.status = v.status;
 							if (v.status === 'Completed') {
-								task.completed_on = frappe.datetime.get_today();
-								task.completed_by = frappe.session.user;
+								task.completed_on = v.completed_on || frappe.datetime.get_today();
+								task.completed_by = v.completed_by || frappe.session.user;
+								task.custom_outcome_hrs = v.custom_outcome_hrs;
 							}
 							if (!task.task_activity) task.task_activity = [];
 							task.task_activity.push({
